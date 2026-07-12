@@ -32,7 +32,7 @@ use pimalaya_cli::{
 };
 use pimalaya_config::{command::shell, secret::Secret};
 use pimalaya_stream::tls::Tls;
-use pimconf::autoconfig::types::Autoconfig;
+use pimconf::{autoconfig::types::Autoconfig, shared::dns::system_resolver};
 use url::Url;
 
 use crate::{
@@ -49,18 +49,25 @@ use crate::{
 /// when `HIMALAYA_DNS_RESOLVER` is unset. Cloudflare's `1.1.1.1`.
 const DEFAULT_RESOLVER: &str = "tcp://1.1.1.1:53";
 
-/// Resolver used by discovery, overridable via `HIMALAYA_DNS_RESOLVER`
-/// so users can avoid leaking the email domain to a third-party
-/// resolver or work around networks that block the default.
+/// Resolver used by discovery: the `HIMALAYA_DNS_RESOLVER` override
+/// first, then the system resolver (`/etc/resolv.conf` on unix, the
+/// network adapters on windows), then the Cloudflare default. This
+/// avoids leaking the email domain to a third-party resolver and works
+/// around networks that block the default.
 pub fn discovery_resolver() -> Url {
-    let resolver =
-        env::var("HIMALAYA_DNS_RESOLVER").unwrap_or_else(|_| DEFAULT_RESOLVER.to_string());
+    if let Ok(resolver) = env::var("HIMALAYA_DNS_RESOLVER") {
+        if let Ok(url) = resolver.parse() {
+            return url;
+        }
+    }
 
-    resolver.parse().unwrap_or_else(|_| {
-        DEFAULT_RESOLVER
-            .parse()
-            .expect("DEFAULT_RESOLVER must be a valid URL")
-    })
+    if let Some(url) = system_resolver() {
+        return url;
+    }
+
+    DEFAULT_RESOLVER
+        .parse()
+        .expect("DEFAULT_RESOLVER must be a valid URL")
 }
 
 /// Builds the [`Tls`] profile passed to the per-mechanism discovery
