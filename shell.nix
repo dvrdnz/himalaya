@@ -1,8 +1,35 @@
 {
+  nixpkgs ? <nixpkgs>,
+  system ? builtins.currentSystem,
+  pkgs ? import nixpkgs { inherit system; },
   pimalaya ? import (fetchTarball "https://github.com/pimalaya/nix/archive/master.tar.gz"),
-  ...
+  fenix ? import (fetchTarball "https://github.com/nix-community/fenix/archive/monthly.tar.gz") { },
 }:
 
-pimalaya.mkShell {
-  extraBuildInputs = "nixd,nixfmt-rfc-style,git-cliff,cargo-deny";
-}
+let
+  inherit (pkgs) cargo-deny openssl pkg-config;
+
+  shell = pimalaya.mkShell {
+    inherit
+      nixpkgs
+      system
+      pkgs
+      fenix
+      ;
+  };
+
+in
+shell.overrideAttrs (prev: {
+  # LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+  #   openssl
+  # ];
+
+  nativeBuildInputs = (prev.nativeBuildInputs or [ ]) ++ [
+    pkg-config
+  ];
+
+  buildInputs = (prev.buildInputs or [ ]) ++ [
+    cargo-deny
+    openssl
+  ];
+})

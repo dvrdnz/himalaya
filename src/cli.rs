@@ -1,32 +1,43 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, process::exit};
 
-use clap::{Parser, Subcommand};
-use color_eyre::Result;
-use pimalaya_tui::{
+use anyhow::{Result, bail};
+use clap::{CommandFactory, Parser, Subcommand};
+use pimalaya_cli::{
+    clap::{
+        args::{AccountFlag, ConfigFlags, JsonFlag, LogFlags},
+        commands::{CompletionCommand, ManualCommand},
+    },
     long_version,
-    terminal::{
-        cli::{
-            arg::path_parser,
-            printer::{OutputFmt, Printer},
-        },
-        config::TomlConfig as _,
-    },
+    printer::Printer,
 };
+use pimalaya_config::toml::TomlConfig;
 
+#[cfg(feature = "gmail")]
+use crate::gmail::{cli::GmailCommand, client::build_gmail_client};
+#[cfg(feature = "imap")]
+use crate::imap::{cli::ImapCommand, client::build_imap_client};
+#[cfg(feature = "jmap")]
+use crate::jmap::{cli::JmapCommand, client::build_jmap_client};
+#[cfg(feature = "m2dir")]
+use crate::m2dir::{cli::M2dirCommand, client::build_m2dir_client};
+#[cfg(feature = "maildir")]
+use crate::maildir::{cli::MaildirCommand, client::build_maildir_client};
+#[cfg(feature = "msgraph")]
+use crate::msgraph::{cli::MsgraphCommand, client::build_msgraph_client};
+#[cfg(feature = "smtp")]
+use crate::smtp::{cli::SmtpCommand, client::build_smtp_client};
 use crate::{
-    account::command::AccountSubcommand,
-    completion::command::CompletionGenerateCommand,
-    config::TomlConfig,
-    envelope::command::EnvelopeSubcommand,
-    flag::command::FlagSubcommand,
-    folder::command::FolderSubcommand,
-    manual::command::ManualGenerateCommand,
-    message::{
-        attachment::command::AttachmentSubcommand, command::MessageSubcommand,
-        template::command::TemplateSubcommand,
+    account::cli::AccountCommand,
+    backend::Backend,
+    config::Config,
+    shared::{
+        attachment::cli::AttachmentCommand, client::EmailClient, envelope::cli::EnvelopeCommand,
+        flag::cli::FlagCommand, mailbox::cli::MailboxCommand, message::cli::MessageCommand,
     },
+    wizard,
 };
 
+/// Top-level command-line interface parser.
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"))]
 #[command(author, version, about)]
@@ -34,138 +45,182 @@ use crate::{
 #[command(propagate_version = true, infer_subcommands = true)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<HimalayaCommand>,
+    pub cmd: Command,
 
-    /// Override the default configuration file path.
+    #[command(flatten)]
+    pub config: ConfigFlags,
+    #[command(flatten)]
+    pub account: AccountFlag,
+    /// Force a specific backend for cross-protocol commands.
     ///
-    /// The given paths are shell-expanded then canonicalized (if
-    /// applicable). If the first path does not point to a valid file,
-    /// the wizard will propose to assist you in the creation of the
-    /// configuration file. Other paths are merged with the first one,
-    /// which allows you to separate your public config from your
-    /// private(s) one(s).
-    /// you can also provide multiple paths by delimiting them with a :
-    /// like you would when setting $PATH in a posix shell
-    #[arg(short, long = "config", global = true, env = "HIMALAYA_CONFIG")]
-    #[arg(value_name = "PATH", value_parser = path_parser, value_delimiter = ':')]
-    pub config_paths: Vec<PathBuf>,
-
-    /// Customize the output format.
-    ///
-    /// The output format determine how to display commands output to
-    /// the terminal.
-    ///
-    /// The possible values are:
-    ///
-    ///  - json: output will be in a form of a JSON-compatible object
-    ///
-    ///  - plain: output will be in a form of either a plain text or
-    ///    table, depending on the command
-    #[arg(long, short, global = true)]
-    #[arg(value_name = "FORMAT", value_enum, default_value_t = Default::default())]
-    pub output: OutputFmt,
-
-    /// Disable all logs.
-    ///
-    /// Same as running command with `RUST_LOG=off` environment
-    /// variable.
-    #[arg(long, global = true)]
-    #[arg(conflicts_with = "debug")]
-    #[arg(conflicts_with = "trace")]
-    pub quiet: bool,
-
-    /// Enable debug logs.
-    ///
-    /// Same as running command with `RUST_LOG=debug` environment
-    /// variable.
-    #[arg(long, global = true)]
-    #[arg(conflicts_with = "quiet")]
-    #[arg(conflicts_with = "trace")]
-    pub debug: bool,
-
-    /// Enable verbose trace logs with backtrace.
-    ///
-    /// Same as running command with `RUST_LOG=trace` and
-    /// `RUST_BACKTRACE=1` environment variables.
-    #[arg(long, global = true)]
-    #[arg(conflicts_with = "quiet")]
-    #[arg(conflicts_with = "debug")]
-    pub trace: bool,
+    /// Only consumed by the shared commands (`mailboxes`, `envelopes`,
+    /// `flags`, `messages`); the protocol-specific subcommands ignore it
+    /// and always use their own backend. With `auto` (the default) the
+    /// shared command picks the first configured backend it supports;
+    /// with an explicit value it uses only that backend, and bails if
+    /// the account has no matching config block or the operation has no
+    /// implementation for it (e.g. `--backend smtp mailboxes list`).
+    #[arg(short, long, global = true, default_value_t)]
+    pub backend: Backend,
+    #[command(flatten)]
+    pub json: JsonFlag,
+    #[command(flatten)]
+    pub log: LogFlags,
 }
 
-#[derive(Subcommand, Debug)]
-pub enum HimalayaCommand {
+/// Top-level subcommands.
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    // --- Shared API
+    //
+    #[command(subcommand, visible_alias = "mbox", alias = "mailboxes")]
+    Mailbox(MailboxCommand),
+    #[command(subcommand, alias = "envelopes")]
+    Envelope(EnvelopeCommand),
+    #[command(subcommand, alias = "flags")]
+    Flag(FlagCommand),
+    #[command(subcommand, visible_alias = "msg", alias = "messages")]
+    Message(MessageCommand),
+    #[command(subcommand, alias = "attachments")]
+    Attachment(AttachmentCommand),
+
+    // --- Protocol-specific APIs
+    //
+    #[cfg(feature = "imap")]
     #[command(subcommand)]
-    #[command(alias = "accounts")]
-    Account(AccountSubcommand),
-
+    Imap(ImapCommand),
+    #[cfg(feature = "jmap")]
     #[command(subcommand)]
-    #[command(visible_alias = "mailbox", aliases = ["mailboxes", "mboxes", "mbox"])]
-    #[command(alias = "folders")]
-    Folder(FolderSubcommand),
-
+    Jmap(JmapCommand),
+    #[cfg(feature = "gmail")]
     #[command(subcommand)]
-    #[command(alias = "envelopes")]
-    Envelope(EnvelopeSubcommand),
-
+    Gmail(GmailCommand),
+    #[cfg(feature = "msgraph")]
     #[command(subcommand)]
-    #[command(alias = "flags")]
-    Flag(FlagSubcommand),
-
+    Msgraph(MsgraphCommand),
+    #[cfg(feature = "maildir")]
     #[command(subcommand)]
-    #[command(alias = "messages", alias = "msgs", alias = "msg")]
-    Message(MessageSubcommand),
-
+    Maildir(MaildirCommand),
+    #[cfg(feature = "m2dir")]
     #[command(subcommand)]
-    #[command(alias = "attachments")]
-    Attachment(AttachmentSubcommand),
-
+    M2dir(M2dirCommand),
+    #[cfg(feature = "smtp")]
     #[command(subcommand)]
-    #[command(alias = "templates", alias = "tpls", alias = "tpl")]
-    Template(TemplateSubcommand),
+    Smtp(SmtpCommand),
 
-    #[command(arg_required_else_help = true)]
-    #[command(alias = "manuals", alias = "mans")]
-    Manual(ManualGenerateCommand),
-
-    #[command(arg_required_else_help = true)]
-    #[command(alias = "completions")]
-    Completion(CompletionGenerateCommand),
+    // --- Meta
+    //
+    #[command(subcommand)]
+    Account(AccountCommand),
+    Completion(CompletionCommand),
+    Manual(ManualCommand),
 }
 
-impl HimalayaCommand {
-    pub async fn execute(self, printer: &mut impl Printer, config_paths: &[PathBuf]) -> Result<()> {
+/// Loads `Config` from the merged `config_paths` or, when no file
+/// exists, runs the wizard to bootstrap one at the target path. Used
+/// by every `build_*_client` helper to get a populated `Config` before
+/// the per-backend client opens its connection.
+pub fn load_or_wizard(config_paths: &[PathBuf]) -> Result<Config> {
+    if let Some(config) = Config::from_paths_or_default(config_paths)? {
+        return Ok(config);
+    }
+
+    match wizard::discover::run(&Config::target_path(config_paths)?)? {
+        Some(config) => Ok(config),
+        None => exit(0),
+    }
+}
+
+impl Command {
+    pub fn execute(
+        self,
+        printer: &mut impl Printer,
+        config_paths: &[PathBuf],
+        account_name: Option<&str>,
+        backend: Backend,
+    ) -> Result<()> {
+        let configs = || {
+            let mut config = load_or_wizard(config_paths)?;
+
+            let Some((_, account_config)) = config.take_account(account_name)? else {
+                bail!("Cannot find account")
+            };
+
+            Ok((config, account_config))
+        };
+
         match self {
-            Self::Account(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, config, config_paths.first()).await
-            }
-            Self::Folder(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, &config).await
+            // --- Shared API
+            //
+            Self::Mailbox(cmd) => {
+                let (config, account_config) = configs()?;
+                let (mut account, mut client) = EmailClient::new(config, account_config, backend)?;
+                cmd.execute(printer, &mut account, &mut client)
             }
             Self::Envelope(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, &config).await
+                let (config, account_config) = configs()?;
+                let (mut account, mut client) = EmailClient::new(config, account_config, backend)?;
+                cmd.execute(printer, &mut account, &mut client)
             }
             Self::Flag(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, &config).await
+                let (config, account_config) = configs()?;
+                let (mut account, mut client) = EmailClient::new(config, account_config, backend)?;
+                cmd.execute(printer, &mut account, &mut client)
             }
             Self::Message(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, &config).await
+                let (config, account_config) = configs()?;
+                let (mut account, mut client) = EmailClient::new(config, account_config, backend)?;
+                cmd.execute(printer, &mut account, &mut client)
             }
             Self::Attachment(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, &config).await
+                let (config, account_config) = configs()?;
+                let (mut account, mut client) = EmailClient::new(config, account_config, backend)?;
+                cmd.execute(printer, &mut account, &mut client)
             }
-            Self::Template(cmd) => {
-                let config = TomlConfig::from_paths_or_default(config_paths).await?;
-                cmd.execute(printer, &config).await
+
+            // --- Protocol-specific APIs
+            //
+            #[cfg(feature = "imap")]
+            Self::Imap(cmd) => {
+                let (mut account, mut client) = build_imap_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut account, &mut client)
             }
-            Self::Manual(cmd) => cmd.execute(printer).await,
-            Self::Completion(cmd) => cmd.execute().await,
+            #[cfg(feature = "jmap")]
+            Self::Jmap(cmd) => {
+                let (mut account, mut client) = build_jmap_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut account, &mut client)
+            }
+            #[cfg(feature = "gmail")]
+            Self::Gmail(cmd) => {
+                let (mut account, mut client) = build_gmail_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut account, &mut client)
+            }
+            #[cfg(feature = "msgraph")]
+            Self::Msgraph(cmd) => {
+                let (mut account, mut client) = build_msgraph_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut account, &mut client)
+            }
+            #[cfg(feature = "maildir")]
+            Self::Maildir(cmd) => {
+                let (mut account, mut client) = build_maildir_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut account, &mut client)
+            }
+            #[cfg(feature = "m2dir")]
+            Self::M2dir(cmd) => {
+                let (mut account, mut client) = build_m2dir_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut account, &mut client)
+            }
+            #[cfg(feature = "smtp")]
+            Self::Smtp(cmd) => {
+                let (_account, mut client) = build_smtp_client(config_paths, account_name)?;
+                cmd.execute(printer, &mut client)
+            }
+
+            // --- Meta
+            //
+            Self::Account(cmd) => cmd.execute(printer, config_paths, account_name, backend),
+            Self::Completion(cmd) => cmd.execute(printer, Cli::command()),
+            Self::Manual(cmd) => cmd.execute(printer, Cli::command()),
         }
     }
 }

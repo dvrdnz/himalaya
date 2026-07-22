@@ -7,7 +7,7 @@
 pimalaya.mkDefault (
   {
     src = ./.;
-    version = "1.1.0";
+    version = "2.0.0-alpha.1";
     mkPackage = (
       {
         lib,
@@ -33,12 +33,13 @@ pimalaya.mkDefault (
               exe = stdenv.hostPlatform.extensions.executable;
             in
             lib.optionalString (lib.hasInfix "wine" emulator) ''
-              export WINEPREFIX=`mktemp -d`
+              export WINEPREFIX="''${WINEPREFIX:-$(mktemp -d)}"
+              mkdir -p $WINEPREFIX
             ''
             + ''
               mkdir -p $out/share/{applications,completions,man}
               cp assets/himalaya.desktop "$out"/share/applications/
-              ${emulator} "$out"/bin/himalaya${exe} man "$out"/share/man
+              ${emulator} "$out"/bin/himalaya${exe} manual "$out"/share/man
               ${emulator} "$out"/bin/himalaya${exe} completion bash > "$out"/share/completions/himalaya.bash
               ${emulator} "$out"/bin/himalaya${exe} completion elvish > "$out"/share/completions/himalaya.elvish
               ${emulator} "$out"/bin/himalaya${exe} completion fish > "$out"/share/completions/himalaya.fish

@@ -3,18 +3,15 @@
   <h1>📫 Himalaya</h1>
   <p>CLI to manage emails</p>
   <p>
-    <a href="https://github.com/pimalaya/himalaya/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/pimalaya/himalaya?color=success"/></a>
-    <a href="https://repology.org/project/himalaya/versions"><img alt="Repology" src="https://img.shields.io/repology/repositories/himalaya?color=success"></a>
     <a href="https://matrix.to/#/#pimalaya:matrix.org"><img alt="Matrix" src="https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white"/></a>
     <a href="https://fosstodon.org/@pimalaya"><img alt="Mastodon" src="https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white"/></a>
   </p>
 </div>
 
-```
-himalaya envelope list --account posteo --folder Archives.FOSS --page 2
-```
-
 ![screenshot](./screenshot.jpeg)
+
+> [!IMPORTANT]
+> This README documents Himalaya v2, which is **not yet released**. If you are running v1 (`himalaya v1.2.0` or earlier), refer to the [v1.2.0 README](https://github.com/pimalaya/himalaya/blob/v1.2.0/README.md) instead. The [MIGRATION.md](./MIGRATION.md) guide walks v1 users through the breaking changes.
 
 ## Table of contents
 
@@ -22,7 +19,7 @@ himalaya envelope list --account posteo --folder Archives.FOSS --page 2
 - [Installation](#installation)
   - [Pre-built binary](#pre-built-binary)
   - [Cargo](#cargo)
-  - [Arch linux](#arch-linux)
+  - [Arch Linux](#arch-linux)
   - [Homebrew](#homebrew)
   - [Scoop](#scoop)
   - [Fedora Linux/CentOS/RHEL](#fedora-linuxcentosrhel)
@@ -33,37 +30,47 @@ himalaya envelope list --account posteo --folder Archives.FOSS --page 2
   - [Gmail](#gmail)
   - [Outlook](#outlook)
   - [iCloud Mail](#icloud-mail)
+- [Usage](#usage)
+  - [Shared API](#shared-api)
+  - [Protocol-specific APIs](#protocol-specific-apis)
+  - [Composing messages](#composing-messages)
+  - [Reading messages](#reading-messages)
+  - [Re-using sessions](#re-using-sessions)
 - [Interfaces](#interfaces)
 - [FAQ](#faq)
+- [License](#license)
+- [AI disclosure](#ai-disclosure)
 - [Social](#social)
 - [Sponsoring](#sponsoring)
 
 ## Features
 
-- Multi-accounting configuration:
-  - interactive via **wizard** (requires `wizard` feature)
-  - manual via **TOML**-based configuration file (see [`./config.sample.toml`](./config.sample.toml))
-- Message composition based on `$EDITOR`
-- **IMAP** backend (requires `imap` feature)
-- **Maildir** backend (requires `maildir` feature)
-- **Notmuch** backend (requires `notmuch` feature)
-- **SMTP** backend (requires `smtp` feature)
-- **Sendmail** backend (requires `sendmail` feature)
-- Global system **keyring** for secret management (requires `keyring` feature)
-- **OAuth 2.0** authorization flow (requires `oauth2` feature)
-- **JSON** output via `--output json`
-- **PGP** encryption:
-  - via shell commands (requires `pgp-commands` feature)
-  - via [GPG](https://www.gnupg.org/) bindings (requires `pgp-gpg` feature)
-  - via native implementation (requires `pgp-native` feature)
+- **Shared API** that maps `mailboxes`, `envelopes`, `flags`, `messages` and `attachments` to the active backend
+- **Protocol-specific APIs** exposing each backend's full surface (`himalaya imap/smtp/jmap/gmail/msgraph/maildir…`)
+- Remote backend support: **IMAP**, **SMTP**, **JMAP**, **Gmail** (REST API), **Microsoft Graph** (Outlook / Microsoft 365)
+- Local (filesystem) backends support: **Maildir** <sup>[specs](https://cr.yp.to/proto/maildir.html)</sup>, **m2dir** <sup>[specs](https://man.sr.ht/~bitfehler/m2dir/)</sup>
+- **Simple auth** support for IMAP/SMTP: anonymous, login, plain, oauthbearer, xoauth2, scram-sha-256
+- **HTTP auth** support for JMAP: basic, bearer
+- **TLS** support:
+  - [Rustls](https://crates.io/crates/rustls) with ring crypto
+  - [Rustls](https://crates.io/crates/rustls) with aws crypto (requires `rustls-aws` feature)
+  - [Native TLS](https://crates.io/crates/native-tls) (requires `native-tls` feature)
+- **Discovery** support:
+  - PACC <sup>[specs](https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc)</sup>
+  - Autoconfiguration (Thunderbird) <sup>[specs](https://wiki.mozilla.org/Thunderbird:Autoconfiguration)</sup>
+  - SRV DNS lookups <sup>[rfc6186](https://datatracker.ietf.org/doc/html/rfc6186)</sup>
+- **TOML configuration** with multi-account support
+- **Shared configuration file** with `himalaya-tui`: same `[accounts.<name>]` blocks load on both binaries (see [Configuration](#configuration))
+- **JSON** output via `--json`
 
-*Himalaya CLI is written in [Rust](https://www.rust-lang.org/), and relies on [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to enable or disable functionalities. Default features can be found in the `features` section of the [`Cargo.toml`](./Cargo.toml#L18), or on [docs.rs](https://docs.rs/crate/himalaya/latest/features).*
+> [!TIP]
+> Himalaya is written in [Rust](https://www.rust-lang.org/) and uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate backend support. The default feature set is declared in [Cargo.toml](./Cargo.toml).
 
 ## Installation
 
 ### Pre-built binary
 
-Himalaya CLI can be installed with the `install.sh` installer:
+Himalaya can be installed with the installer:
 
 *As root:*
 
@@ -79,39 +86,34 @@ curl -sSL https://raw.githubusercontent.com/pimalaya/himalaya/master/install.sh 
 
 These commands install the latest binary from the GitHub [releases](https://github.com/pimalaya/himalaya/releases) section.
 
-If you want a more up-to-date version than the latest release, check out the [releases](https://github.com/pimalaya/himalaya/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. You will find a pre-built binary matching your OS. These pre-built binaries are built from the `master` branch.
+For a more up-to-date version than the latest release, check out the [releases](https://github.com/pimalaya/himalaya/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. These pre-built binaries are built from the `master` branch.
 
-*Such binaries are built with the default cargo features. If you need more features, please use another installation method.*
+> [!NOTE]
+> Such binaries are built with the default cargo features. If you need specific features, please use another installation method.
 
 ### Cargo
-
-Himalaya CLI can be installed with [cargo](https://doc.rust-lang.org/cargo/):
-
-```
-cargo install himalaya --locked
-```
-
-With only IMAP support:
-
-```
-cargo install himalaya --locked --no-default-features --features imap
-```
-
-You can also use the git repository for a more up-to-date (but less stable) version:
 
 ```
 cargo install --locked --git https://github.com/pimalaya/himalaya.git
 ```
 
+With only IMAP+SMTP support:
+
+```
+cargo install --locked --git https://github.com/pimalaya/himalaya.git \
+  --no-default-features \
+  --features imap,smtp,rustls-ring
+```
+
 ### Arch Linux
 
-Himalaya CLI can be installed on [Arch Linux](https://archlinux.org/) with either the community repository:
+From the community repository:
 
 ```
 pacman -S himalaya
 ```
 
-or the [user repository](https://aur.archlinux.org/):
+Or the [user repository](https://aur.archlinux.org/):
 
 ```
 git clone https://aur.archlinux.org/himalaya-git.git
@@ -119,7 +121,7 @@ cd himalaya-git
 makepkg -isc
 ```
 
-If you use [yay](https://github.com/Jguer/yay), it is even simplier:
+Or with [yay](https://github.com/Jguer/yay):
 
 ```
 yay -S himalaya-git
@@ -127,17 +129,14 @@ yay -S himalaya-git
 
 ### Homebrew
 
-Himalaya CLI can be installed with [Homebrew](https://brew.sh/):
-
 ```
 brew install himalaya
 ```
 
-Note: cargo features are not compatible with brew. If you need features like OAuth 2.0, please use a different installation method.
+> [!NOTE]
+> Cargo features are not compatible with brew. If you need a different feature set, please use another installation method.
 
 ### Scoop
-
-Himalaya CLI can be installed with [Scoop](https://scoop.sh/):
 
 ```
 scoop install himalaya
@@ -145,7 +144,7 @@ scoop install himalaya
 
 ### Fedora Linux/CentOS/RHEL
 
-Himalaya CLI can be installed on [Fedora Linux](https://fedoraproject.org/)/CentOS/RHEL via [COPR](https://copr.fedorainfracloud.org/coprs/atim/himalaya/) repo:
+From the [COPR](https://copr.fedorainfracloud.org/coprs/atim/himalaya/) repo:
 
 ```
 dnf copr enable atim/himalaya
@@ -154,366 +153,229 @@ dnf install himalaya
 
 ### Nix
 
-Himalaya CLI can be installed with [Nix](https://serokell.io/blog/what-is-nix):
-
-```
-nix-env -i himalaya
-```
-
-You can also use the git repository for a more up-to-date (but less stable) version:
-
-```
-nix-env -if https://github.com/pimalaya/himalaya/archive/master.tar.gz
-```
-
-*Or, from within the source tree checkout:*
-
-```
-nix-env -if .
-```
-
 If you have the [Flakes](https://nixos.wiki/wiki/Flakes) feature enabled:
 
 ```
-nix profile install himalaya
+nix profile install github:pimalaya/himalaya
 ```
 
-*Or, from within the source tree checkout:*
+Or run without installing:
 
 ```
-nix profile install
-```
-
-*You can also run Himalaya directly without installing it:*
-
-```
-nix run himalaya
+nix run github:pimalaya/himalaya
 ```
 
 ### Sources
 
-Himalaya CLI can be installed from sources.
-
-First you need to install the Rust development environment (see the [rust installation documentation](https://doc.rust-lang.org/cargo/getting-started/installation.html)):
-
 ```
-curl https://sh.rustup.rs -sSf | sh
-```
-
-Then, you need to clone the repository and install dependencies:
-
-```
-git clone https://github.com/pimalaya/himalaya.git
+git clone https://github.com/pimalaya/himalaya
 cd himalaya
-cargo check
+nix run
 ```
-
-Now, you can build Himalaya:
-
-```
-cargo build --release
-```
-
-*Binaries are available under the `target/release` folder.*
 
 ## Configuration
 
-Just run `himalaya`, the wizard will help you to configure your default account.
+Run `himalaya`. With no configuration file on disk the wizard prompts for an account name and an email address, runs provider discovery (PACC, then Thunderbird Autoconfiguration, then RFC 6186 SRV), fills the IMAP/SMTP (or JMAP) prompts with the discovered defaults, then writes the result to disk.
 
-Accounts can be (re)configured via the wizard using the command `himalaya account configure <name>`.
+A persistent configuration is loaded from the first valid path among:
 
-You can also manually edit your own configuration, from scratch:
+- `$XDG_CONFIG_HOME/himalaya/config.toml`
+- `$HOME/.config/himalaya/config.toml`
+- `$HOME/.himalayarc`
 
-- Copy the content of the documented [`./config.sample.toml`](./config.sample.toml)
-- Paste it in a new file `~/.config/himalaya/config.toml`
-- Edit, then comment or uncomment the options you want
+These are the same paths the [himalaya-tui](https://github.com/pimalaya/himalaya-tui) TUI looks at: one TOML file backs both binaries. CLI-only fields and TUI-only sections coexist without errors. See [config.sample.toml](./config.sample.toml) for a documented template.
+
+Override the path with `-c <PATH>`; multiple paths can be passed at once, separated by `:`. The first one is the base and the rest are deep-merged on top.
+
+Accounts can be (re)configured later with `himalaya account configure <name>`. The wizard skips discovery in this mode: it reuses the existing values as prompt defaults.
 
 ### Proton Mail
 
-When using Proton Bridge, emails are synchronized locally and exposed via a local IMAP/SMTP server. This implies 2 things:
-
-- Id order may be reversed or shuffled, but envelopes will still be sorted by date.
-- SSL/TLS needs to be deactivated manually.
-- The password to use is the one generated by Proton Bridge, not the one from your Proton Mail account.
+Proton does not expose IMAP/SMTP directly: run [Proton Bridge](https://proton.me/mail/bridge), which synchronizes mail locally and serves it on a local IMAP/SMTP endpoint. The password is the one generated by the Bridge, not your Proton account password.
 
 ```toml
 [accounts.proton]
-email = "example@proton.me"
 
-backend.type = "imap"
-backend.host = "127.0.0.1"
-backend.port = 1143
-backend.encryption.type = "none"
-backend.login = "example@proton.me"
-backend.auth.type = "password"
-backend.auth.raw = "*****"
+imap.server = "imap://127.0.0.1:1143"
+imap.sasl.plain.username = "example@proton.me"
+imap.sasl.plain.password.command = "pass show proton-bridge"
 
-message.send.backend.type = "smtp"
-message.send.backend.host = "127.0.0.1"
-message.send.backend.port = 1025
-message.send.backend.encryption.type = "none"
-message.send.backend.login = "example@proton.me"
-message.send.backend.auth.type = "password"
-message.send.backend.auth.raw = "*****"
+smtp.server = "smtp://127.0.0.1:1025"
+smtp.sasl.plain.username = "example@proton.me"
+smtp.sasl.plain.password.command = "pass show proton-bridge"
 ```
 
-If you still want to use TLS, you need to export the certificate generated by Proton Bridge, then give it to Himalaya:
+To keep TLS on the local link, export the certificate generated by the Bridge and enable STARTTLS:
 
 ```toml
-backend.encryption.type = "start-tls"
-backend.encryption.cert = "/path/to/exported/cert.pem"
+imap.starttls = true
+imap.tls.cert = "/path/to/exported/cert.pem"
 
-message.send.backend.encryption.type = "start-tls"
-message.send.backend.encryption.cert = "/path/to/exported/cert.pem"
+smtp.starttls = true
+smtp.tls.cert = "/path/to/exported/cert.pem"
 ```
-
-Keeping your password inside the configuration file is good for testing purpose, but it is not safe. You have 2 better alternatives:
-
-- Save your password in any password manager that can be queried via the CLI:
-
-  ```toml
-  backend.auth.cmd = "pass show proton"
-  ```
-
-- Use the global keyring of your system (requires the `keyring` cargo feature):
-
-  ```toml
-  backend.auth.keyring = "proton-example"
-  ```
-
-  Running `himalaya account configure proton` will ask for your IMAP password, just paste the one generated previously.
 
 ### Gmail
 
-Google passwords cannot be used directly. There is two ways to authenticate yourself:
-
-#### Using [App Passwords](https://support.google.com/mail/answer/185833)
-
-This option is the simplest and the fastest. First, be sure that:
-
-- IMAP is enabled
-- Two-step authentication is enabled
-- Less secure app access is enabled
-
-First create a [dedicated password](https://myaccount.google.com/apppasswords) for Himalaya.
+Gmail rejects the account password over SASL PLAIN: generate an [app password](https://myaccount.google.com/apppasswords) (requires 2-step verification) and feed it through `password.command` or `password.raw`.
 
 ```toml
 [accounts.gmail]
-email = "example@gmail.com"
+default = true
 
-folder.aliases.inbox = "INBOX"
-folder.aliases.sent = "[Gmail]/Sent Mail"
-folder.aliases.drafts = "[Gmail]/Drafts"
-folder.aliases.trash = "[Gmail]/Trash"
+imap.server = "imaps://imap.gmail.com:993"
+imap.sasl.plain.username = "example@gmail.com"
+imap.sasl.plain.password.command = "pass show gmail"
 
-backend.type = "imap"
-backend.host = "imap.gmail.com"
-backend.port = 993
-backend.login = "example@gmail.com"
-backend.auth.type = "password"
-backend.auth.raw = "*****"
+smtp.server = "smtps://smtp.gmail.com:465"
+smtp.sasl.plain.username = "example@gmail.com"
+smtp.sasl.plain.password.command = "pass show gmail"
 
-message.send.backend.type = "smtp"
-message.send.backend.host = "smtp.gmail.com"
-message.send.backend.port = 465
-message.send.backend.login = "example@gmail.com"
-message.send.backend.auth.type = "password"
-message.send.backend.auth.cmd = "*****"
+mailbox.alias.inbox = "INBOX"
+mailbox.alias.sent = "[Gmail]/Sent Mail"
+mailbox.alias.drafts = "[Gmail]/Drafts"
+mailbox.alias.trash = "[Gmail]/Trash"
+mailbox.alias.archive = "[Gmail]/All Mail"
 ```
 
-Keeping your password inside the configuration file is good for testing purpose, but it is not safe. You have 2 better alternatives:
-
-- Save your password in any password manager that can be queried via the CLI:
-
-  ```toml
-  backend.auth.cmd = "pass show gmail"
-  ```
-
-- Use the global keyring of your system (requires the `keyring` cargo feature):
-
-  ```toml
-  backend.auth.keyring = "gmail-example"
-  ```
-
-  Running `himalaya configure -a gmail` will ask for your IMAP password, just paste the one generated previously.
-
-#### Using OAuth 2.0
-
-This option is the most secure but the hardest to configure. It requires the `oauth2` and `keyring` cargo features.
-
-First, you need to get your OAuth 2.0 credentials by following [this guide](https://developers.google.com/identity/protocols/oauth2#1.-obtain-oauth-2.0-credentials-from-the-dynamic_data.setvar.console_name-.). Once you get your client id and your client secret, you can configure your Himalaya account this way:
-
-```toml
-[accounts.gmail]
-email = "example@gmail.com"
-
-folder.aliases.inbox = "INBOX"
-folder.aliases.sent = "[Gmail]/Sent Mail"
-folder.aliases.drafts = "[Gmail]/Drafts"
-folder.aliases.trash = "[Gmail]/Trash"
-
-backend.type = "imap"
-backend.host = "imap.gmail.com"
-backend.port = 993
-backend.login = "example@gmail.com"
-backend.auth.type = "oauth2"
-backend.auth.method = "xoauth2"
-backend.auth.client-id = "*****"
-backend.auth.client-secret.keyring = "gmail-oauth2-client-secret"
-backend.auth.access-token.keyring = "gmail-oauth2-access-token"
-backend.auth.refresh-token.keyring = "gmail-oauth2-refresh-token"
-backend.auth.auth-url = "https://accounts.google.com/o/oauth2/v2/auth"
-backend.auth.token-url = "https://www.googleapis.com/oauth2/v3/token"
-backend.auth.pkce = true
-backend.auth.scope = "https://mail.google.com/"
-
-message.send.backend.type = "smtp"
-message.send.backend.host = "smtp.gmail.com"
-message.send.backend.port = 465
-message.send.backend.login = "example@gmail.com"
-message.send.backend.auth.type = "oauth2"
-message.send.backend.auth.method = "xoauth2"
-message.send.backend.auth.client-id = "*****"
-message.send.backend.auth.client-secret.keyring = "gmail-oauth2-client-secret"
-message.send.backend.auth.access-token.keyring = "gmail-oauth2-access-token"
-message.send.backend.auth.refresh-token.keyring = "gmail-oauth2-refresh-token"
-message.send.backend.auth.auth-url = "https://accounts.google.com/o/oauth2/v2/auth"
-message.send.backend.auth.token-url = "https://www.googleapis.com/oauth2/v3/token"
-message.send.backend.auth.pkce = true
-message.send.backend.auth.scope = "https://mail.google.com/"
-```
-
-Running `himalaya account configure gmail` will complete your OAuth 2.0 setup and ask for your client secret.
+Every Gmail label shows up as a top-level IMAP mailbox, and the special mailboxes live under the `[Gmail]/` prefix — quote them in the shell (`-m "[Gmail]/Drafts"`) or reach them through an alias. `[Gmail]/All Mail` is the archive containing every message: aliasing it makes "search everything" one flag away (`himalaya envelope search -m archive ...`).
 
 ### Outlook
 
-```toml
-[accounts.outlook]
-email = "example@outlook.com"
-
-backend.type = "imap"
-backend.host = "outlook.office365.com"
-backend.port = 993
-backend.login = "example@outlook.com"
-backend.auth.type = "password"
-backend.auth.raw = "*****"
-
-message.send.backend.type = "smtp"
-message.send.backend.host = "smtp-mail.outlook.com"
-message.send.backend.port = 587
-message.send.backend.encryption.type = "start-tls"
-message.send.backend.login = "example@outlook.com"
-message.send.backend.auth.type = "password"
-message.send.backend.auth.raw = "*****"
-```
-
-Keeping your password inside the configuration file is good for testing purpose, but it is not safe. You have 2 better alternatives:
-
-- Save your password in any password manager that can be queried via the CLI:
-
-  ```toml
-  backend.auth.cmd = "pass show outlook"
-  ```
-
-- Use the global keyring of your system (requires the `keyring` cargo feature):
-
-  ```toml
-  backend.auth.keyring = "outlook-example"
-  ```
-
-  Running `himalaya account configure outlook` will ask for your IMAP password, just paste the one generated previously.
-
-#### Using OAuth 2.0
-
-This option is the most secure but the hardest to configure. First, you need to get your OAuth 2.0 credentials by following [this guide](https://learn.microsoft.com/en-us/exchange/client-developer/legacy-protocols/how-to-authenticate-an-imap-pop-smtp-application-by-using-oauth). Once you get your client id and your client secret, you can configure your Himalaya account this way:
+Microsoft has retired basic authentication: use OAuth 2.0 via `oauthbearer` or `xoauth2`, with the access token supplied by an external helper such as [ortie](https://github.com/pimalaya/ortie).
 
 ```toml
 [accounts.outlook]
-email = "example@outlook.com"
 
-backend.type = "imap"
-backend.host = "outlook.office365.com"
-backend.port = 993
-backend.login = "example@outlook.com"
-backend.auth.type = "oauth2"
-backend.auth.client-id = "*****"
-backend.auth.client-secret.keyring = "outlook-oauth2-client-secret"
-backend.auth.access-token.keyring = "outlook-oauth2-access-token"
-backend.auth.refresh-token.keyring = "outlook-oauth2-refresh-token"
-backend.auth.auth-url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
-backend.auth.token-url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-backend.auth.pkce = true
-backend.auth.scopes = ["https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send"]
+imap.server = "imaps://outlook.office365.com:993"
+imap.sasl.xoauth2.username = "example@outlook.com"
+imap.sasl.xoauth2.token.command = ["ortie", "token", "read", "outlook"]
 
-message.send.backend.type = "smtp"
-message.send.backend.host = "smtp.mail.outlook.com"
-message.send.backend.port = 587
-message.send.backend.starttls = true
-message.send.backend.login = "example@outlook.com"
-message.send.backend.auth.type = "oauth2"
-message.send.backend.auth.client-id = "*****"
-message.send.backend.auth.client-secret.keyring = "outlook-oauth2-client-secret"
-message.send.backend.auth.access-token.keyring = "outlook-oauth2-access-token"
-message.send.backend.auth.refresh-token.keyring = "outlook-oauth2-refresh-token"
-message.send.backend.auth.auth-url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
-message.send.backend.auth.token-url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-message.send.backend.auth.pkce = true
-message.send.backend.auth.scopes = ["https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send"]
+smtp.server = "smtp://smtp-mail.outlook.com:587"
+smtp.starttls = true
+smtp.sasl.xoauth2.username = "example@outlook.com"
+smtp.sasl.xoauth2.token.command = ["ortie", "token", "read", "outlook"]
 ```
-
-Running `himalaya account configure outlook` will complete your OAuth 2.0 setup and ask for your client secret.
 
 ### iCloud Mail
 
-From the [iCloud Mail](https://support.apple.com/en-us/HT202304) support page:
-
-- IMAP port = `993`.
-- IMAP login = name of your iCloud Mail email address (for example, `johnappleseed`, not `johnappleseed@icloud.com`)
-- SMTP port = `587` with `STARTTLS`
-- SMTP login = full iCloud Mail email address (for example, `johnappleseed@icloud.com`, not `johnappleseed`)
+From the [iCloud Mail](https://support.apple.com/en-us/HT202304) support page: the IMAP login is the name of your address (`johnappleseed`, not `johnappleseed@icloud.com`) while the SMTP login is the full address, and a dedicated [app-specific password](https://support.apple.com/en-us/HT204397) is required.
 
 ```toml
 [accounts.icloud]
-email = "johnappleseed@icloud.com"
 
-backend.type = "imap"
-backend.host = "imap.mail.me.com"
-backend.port = 993
-backend.login = "johnappleseed"
-backend.auth.type = "password"
-backend.auth.raw = "*****"
+imap.server = "imaps://imap.mail.me.com:993"
+imap.sasl.plain.username = "johnappleseed"
+imap.sasl.plain.password.command = "pass show icloud"
 
-message.send.backend.type = "smtp"
-message.send.backend.host = "smtp.mail.me.com"
-message.send.backend.port = 587
-message.send.backend.encryption.type = "start-tls"
-message.send.backend.login = "johnappleseed@icloud.com"
-message.send.backend.auth.type = "password"
-message.send.backend.auth.raw = "*****"
+smtp.server = "smtp://smtp.mail.me.com:587"
+smtp.starttls = true
+smtp.sasl.plain.username = "johnappleseed@icloud.com"
+smtp.sasl.plain.password.command = "pass show icloud"
 
-folder.aliases.sent = "Sent Messages"
+mailbox.alias.sent = "Sent Messages"
 ```
 
-Keeping your password inside the configuration file is good for testing purpose, but it is not safe. You have 2 better alternatives:
+## Usage
 
-- Save your password in any password manager that can be queried via the CLI:
+### Shared API
 
-  ```toml
-  backend.auth.cmd = "pass show icloud"
-  ```
+Backend-agnostic commands operate on the account's first configured backend, or the one selected with `-b/--backend`:
 
-- Use the global keyring of your system (requires the `keyring` cargo feature):
+```
+himalaya mailbox list
+himalaya envelope list -m INBOX --page 2
+himalaya envelope search from alice and after 2026-01-01 order by date desc
+himalaya flag add -m INBOX --flag seen 1:3,5
+himalaya message copy --from INBOX --to Archives 42
+himalaya attachment download -m INBOX 42
+```
 
-  ```toml
-  backend.auth.keyring = "icloud-example"
-  ```
+When the `inbox` alias is configured under `[mailbox.alias]`, `-m/--mailbox` becomes optional: shared commands fall back to that id. With `[mailbox.alias] inbox = "INBOX"`, the calls above shorten to `envelope list --page 2`, `flag add --flag seen 1:3,5`, etc.
 
-  Running `himalaya account configure icloud` will ask for your IMAP password, just paste the one generated previously.
+`envelope list` is plain pagination, ordered by date descending. To filter or sort, use `envelope search` with a trailing query covering `date`, `after`, `from`, `to`, `subject`, `body`, `flag` conditions (combined with `and`, `or`, `not`, grouped with parens) and an `order by date|from|to|subject [asc|desc]` sort chain. Date clauses target the `Date:` header (sent-at) on every backend. The full grammar lives in `himalaya envelope search --help`, which is the source of truth for the query DSL.
+
+The query DSL is himalaya's own and compiles to each backend's native search: provider-specific operators (Gmail's `in:`/`label:` syntax, `X-GM-RAW`, …) are not supported. On IMAP the search currently runs server-side as `UID SORT`, so it requires the `SORT` capability — servers without it (notably Gmail) reject the command for now (see [#698](https://github.com/pimalaya/himalaya/issues/698)).
+
+The shared surface is a strict least-common-denominator subset across IMAP, JMAP, Gmail, Microsoft Graph, Maildir and m2dir. Operations that do not generalize (mailbox roles, attribute flags, JMAP-specific queries…) live under the protocol-specific subcommands.
+
+### Protocol-specific APIs
+
+Each backend exposes its full native API under its own subgroup:
+
+```sh
+himalaya imap select INBOX
+himalaya imap status INBOX
+himalaya imap subscribe INBOX
+himalaya imap raw 'SEARCH FROM "alice@example.com"'
+
+himalaya jmap mailbox query --role drafts
+himalaya jmap identity get
+himalaya jmap vacation get
+
+himalaya gmail messages list -q "from:alice is:unread"
+himalaya gmail labels list
+
+himalaya msgraph message list --folder inbox
+himalaya msgraph mail-folder list
+
+himalaya maildir create Archives
+himalaya maildir messages save -m ~/Mail/example/Archives < message.eml
+
+himalaya smtp send -f me@example.com -t you@example.com < message.eml
+himalaya smtp raw 'VRFY postmaster'
+```
+
+The `-b/--backend` flag is only consumed by the shared commands; protocol subcommands always use their own backend.
+
+### Composing messages
+
+The built-in `message compose` / `reply` / `forward` commands cover simple cases via CLI flags:
+
+```
+himalaya message compose --from me@example.org --to you@example.org \
+    --subject "Hello" --body "Hi!" --send
+```
+
+For richer composition (multipart MIME, MML directives, signing/encryption, editor-driven workflows), chain a standalone composer such as [mml](https://github.com/pimalaya/mml) into `message send` / `message add` through a tempfile or bash/zsh process substitution:
+
+```sh
+# Explicit tempfile, works in plain POSIX sh
+mml compose /tmp/draft.eml && himalaya message send /tmp/draft.eml
+
+# Bash / zsh process substitution, single command, no tempfile
+mml compose >(himalaya message send)
+himalaya message read 42 | mml reply >(himalaya message send)
+```
+
+The path-arg or process-substitution forms keep the composer's stdout connected to the terminal, so any `$EDITOR` it spawns sees a real tty. The bare-pipe form (`mml compose | himalaya message send`) hangs because the editor inherits a pipe on its stdout.
+
+A prepared RFC 5322 file can also be staged as a draft instead of sent right away — handy for "compose, review in another client, then send" workflows:
+
+```sh
+himalaya message add -m drafts --flag draft < message.eml  # save as draft
+himalaya message send --save sent < message.eml            # send + keep a copy
+```
+
+Both `-m`/`--save` values are resolved through the account's `[mailbox.alias]` map.
+
+### Reading messages
+
+`himalaya message read <ID>` renders headers and text bodies; `--raw` dumps the original RFC 5322 bytes; `--json` emits the parsed message. A few behaviours worth knowing, especially when scripting:
+
+- Reading is side-effect-free: messages are fetched with `BODY.PEEK`, so `message read` never sets `\Seen`. Mark explicitly with `flag add --flag seen <ID>`.
+- Ids are per-mailbox (IMAP UID, JMAP email id or Maildir filename id): the same message gets a new id when copied or moved. The `message-id` field exposed in `--json` envelope output is the stable cross-mailbox key.
+- Every command accepts `--json`; envelope listings serialize as `{"envelopes": [{"id", "message-id", "flags": [{"raw", "iana"}], "subject", "from": [{"name", "email"}], "to", "date", "size", "has-attachment"}]}`.
+
+### Re-using sessions
+
+Each invocation opens a fresh TCP+TLS+SASL session by default. To amortize the handshake across many commands, pair himalaya with [`sirup`](https://github.com/pimalaya/sirup): `sirup` exposes a pre-authenticated IMAP/SMTP session over a Unix socket, and himalaya can point its `imap.server` / `smtp.server` at that socket.
 
 ## Interfaces
 
-These interfaces are built at the top of Himalaya CLI to improve the User Experience:
+Himalaya CLI is one of several front-ends to the Pimalaya libraries:
 
+- [pimalaya/himalaya-tui](https://github.com/pimalaya/himalaya-tui): official TUI (in active development)
 - [pimalaya/himalaya-vim](https://github.com/pimalaya/himalaya-vim): Vim plugin
 - [dantecatalfamo/himalaya-emacs](https://github.com/dantecatalfamo/himalaya-emacs): Emacs plugin
 - [jns/himalaya](https://www.raycast.com/jns/himalaya): Raycast extension
@@ -527,166 +389,97 @@ These interfaces are built at the top of Himalaya CLI to improve the User Experi
 
   Aerc, mutt and alpine can be categorized as Terminal User Interfaces (TUI). When the program is executed, your terminal is locked into an event loop and you interact with your emails using keybinds.
 
-  Himalaya is also a TUI, but more specifically a Command-Line Interface (CLI). There is no event loop: you interact with your emails using shell commands, in a stateless way.
+  Himalaya is a Command-Line Interface (CLI). There is no event loop: you interact with your emails using shell commands, in a stateless way.
 
-  Additionaly, Himalaya CLI is based on `email-lib`, which is also part of the Pimalaya project. The aim is not just to propose a new terminal interface, but also to expose Rust tools to deal with emails. Anyone who knows Rust language can build his own email interface, without re-inventing the wheel.
+  A dedicated TUI ([himalaya-tui](https://github.com/pimalaya/himalaya-tui)) is in active development on top of the same Pimalaya libraries, and is definitely closer to aerc, mutt and alpine.
 </details>
 
 <details>
-  <summary>How to compose a message?</summary>
+  <summary>How are secrets resolved?</summary>
 
-  An email message is a list of **headers** (`key: val`) followed by a **body**. They form together a template:
+  Every `*.passwd` / `*.password` / `*.token` field accepts either a raw literal or a shell command that prints the secret on stdout. The raw form is convenient for testing but should not be used in production:
 
-  ```eml
-  Header: value
-  Header: value
-  Header: value
-
-  Body
+  ```toml
+  imap.sasl.plain.passwd.raw = "***"
+  imap.sasl.plain.passwd.command = "pass show example"
+  imap.sasl.plain.passwd.command = ["pass", "show", "example"]
   ```
 
-  ***Headers and body must be separated by an empty line.***
-
-  ### Headers
-
-  Here a non-exhaustive list of valid email message template headers:
-
-  - `Message-ID`: represents the message identifier (you usually do not need to set up it manually)
-  - `In-Reply-To`: represents the identifier of the replied message
-  - `Date`: represents the date of the message
-  - `Subject`: represents the subject of the message
-  - `From`: represents the address of the sender
-  - `To`: represents the addresses of the receivers
-  - `Reply-To`: represents the address the receiver should reply to instead of the `From` header
-  - `Cc`: represents the addresses of the other receivers (carbon copy)
-  - `Bcc`: represents the addresses of the other hidden receivers (blind carbon copy)
-
-  An address can be:
-
-  - a single email address `user@domain`
-  - a named address `Name <user@domain>`
-  - a quoted named address `"Name" <user@domain>`
-
-  Multiple address are separated by a comma `,`: `user@domain, Name <user@domain>, "Name" <user@domain>`.
-
-  ### Plain text body
-
-  Email message template body can be written in plain text. The result will be compiled into a single `text/plain` MIME part:
-
-  ```eml
-  From: alice@localhost
-  To: Bob <bob@localhost>
-  Subject: Hello from Himalaya
-
-  Hello, world!
-  ```
-
-  ### MML body
-
-  Email message template body can also be written in MML. The MIME Meta Language was introduced by the Emacs [`mml`](https://www.gnu.org/software/emacs/manual/html_node/emacs-mime/Composing.html) ELisp module. Pimalaya [ported it](https://github.com/pimalaya/core/tree/master/mml) in Rust.
-
-  A raw email message is structured according to the [MIME](https://www.rfc-editor.org/rfc/rfc2045) standard. This standard produces verbose, non-friendly messages. Here comes MML: it simplifies the way email message body are structured. Thanks to its simple XML-based syntax, it allows you to easily add multiple parts, attach a binary file, or attach inline image to your body without dealing with the MIME standard.
-
-  For instance, this MML template:
-
-  ```eml
-  From: alice@localhost
-  To: bob@localhost
-  Subject: MML simple
-
-  <#multipart type=alternative>
-  This is a plain text part.
-  <#part type=text/enriched>
-  <center>This is a centered enriched part</center>
-  <#/multipart>
-  ```
-
-  compiles into the following MIME Message:
-
-  ```eml
-  Subject: MML simple
-  To: bob@localhost
-  From: alice@localhost
-  MIME-Version: 1.0
-  Date: Tue, 29 Nov 2022 13:07:01 +0000
-  Content-Type: multipart/alternative;
-   boundary="4CV1Cnp7mXkDyvb55i77DcNSkKzB8HJzaIT84qZe"
-
-  --4CV1Cnp7mXkDyvb55i77DcNSkKzB8HJzaIT84qZe
-  Content-Type: text/plain; charset=utf-8
-  Content-Transfer-Encoding: 7bit
-
-  This is a plain text part.
-  --4CV1Cnp7mXkDyvb55i77DcNSkKzB8HJzaIT84qZe
-  Content-Type: text/enriched
-  Content-Transfer-Encoding: 7bit
-
-  <center>This is a centered enriched part</center>
-  --4CV1Cnp7mXkDyvb55i77DcNSkKzB8HJzaIT84qZe--
-  ```
-
-  *See more examples at [pimalaya/core/mml](https://github.com/pimalaya/core/tree/master/mml/examples).*
+  Native keyring support was removed in v2. Use a third-party keyring CLI (`pass`, `secret-tool`, `gopass`…) as the `command`.
 </details>
 
 <details>
-  <summary>How to add attachments to a message?</summary>
+  <summary>How is OAuth 2.0 handled?</summary>
 
-  *Read first about the FAQ: How to compose a message?*.
-
-  ```eml
-  From: alice@localhost
-  To: bob@localhost
-  Subject: How to attach stuff
-
-  Regular binary attachment:
-  <#part filename=/path/to/file.pdf><#/part>
-
-  Custom file name:
-  <#part filename=/path/to/file.pdf name=custom.pdf><#/part>
-
-  Inline image:
-  <#part disposition=inline filename=/path/to/image.png><#/part>
-  ```
-
-  *See more examples at [pimalaya/core/mml](https://github.com/pimalaya/core/tree/master/mml/examples).*
+  v2 does not ship OAuth flows. Use [pimalaya/ortie](https://github.com/pimalaya/ortie) (or any other token broker) to obtain an access token, then plug it as a `command` returning the token on stdout. For JMAP, point `jmap.auth.bearer.token.command` at the broker; for IMAP/SMTP, route the bearer through a SASL mechanism that consumes a command-sourced password.
 </details>
 
 <details>
-  <summary>How to debug Himalaya CLI?</summary>
+  <summary>How does the wizard discover IMAP/SMTP/JMAP configs?</summary>
 
-  The simplest way is to use `--debug` and `--trace` arguments.
+  The wizard runs three discovery mechanisms in series on the email address domain; the first non-empty hit wins:
 
-  The advanced way is based on environment variables:
+  1. **PACC** <sup>[draft-ietf-mailmaint-pacc-02](https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc-02)</sup>: well-known JSON, digest-verified against the `_ua-auto-config` TXT record.
+  2. **Thunderbird Autoconfiguration**: ISP main / well-known / ISPDB lookups, then MX-based retry, then the `mailconf=<URL>` TXT redirect.
+  3. **RFC 6186 SRV**: `_imap._tcp`, `_imaps._tcp`, `_submission._tcp` lookups assembled into a single report.
 
-  - `RUST_LOG=<level>`: determines the log level filter, can be one of `off`, `error`, `warn`, `info`, `debug` and `trace`.
-  - `RUST_SPANTRACE=1`: enables the spantrace (a span represent periods of time in which a program was executing in a particular context).
-  - `RUST_BACKTRACE=1`: enables the error backtrace.
-  - `RUST_BACKTRACE=full`: enables the full error backtrace, which include source lines where the error originated from.
-
-  Logs are written to the `stderr`, which means that you can redirect them easily to a file:
-
-  ```
-  RUST_LOG=debug himalaya 2>/tmp/himalaya.log
-  ```
+  See [pimconf](https://github.com/pimalaya/pimconf) for the full chain.
 </details>
 
 <details>
-  <summary>How the wizard discovers IMAP/SMTP configs?</summary>
+  <summary>How to debug Himalaya?</summary>
 
-  All the lookup mechanisms use the email address domain as base for the lookup. It is heavily inspired from the Thunderbird [Autoconfiguration](https://udn.realityripple.com/docs/Mozilla/Thunderbird/Autoconfiguration) protocol. For example, for the email address `test@example.com`, the lookup is performed as (in this order):
+  Use `--log-level <level>` (alias `--log`) where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
 
-  1. check for `autoconfig.example.com`
-  2. look up of `example.com` in the ISPDB (the Thunderbird central database)
-  3. look up `MX example.com` in DNS, and for `mx1.mail.hoster.com`, look up `hoster.com` in the ISPDB
-  4. look up `SRV example.com` in DNS
-  5. try to guess (`imap.example.com`, `smtp.example.com`…)
+  ```
+  himalaya --log trace mailbox list
+  ```
+
+  The `RUST_LOG` environment variable is consulted when `--log` is not passed, and supports per-target filters (see the [`env_logger` documentation](https://docs.rs/env_logger/latest/env_logger/#enabling-logging)). `RUST_BACKTRACE=1` enables full error backtraces.
+
+  Logs are written to `stderr`, so they can be redirected easily to a file:
+
+  ```
+  himalaya --log trace mailbox list 2>/tmp/himalaya.log
+  ```
+
+  You can also send logs straight to a file via `--log-file <path>`:
+
+  ```
+  himalaya --log trace --log-file /tmp/himalaya.log mailbox list
+  ```
 </details>
 
 <details>
   <summary>How to disable color output?</summary>
 
-  Simply set the environment variable NO_COLOR=1
+  Set `NO_COLOR=1` in your environment.
 </details>
+
+## License
+
+This project is licensed under either of:
+
+- [MIT license](LICENSE-MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+
+at your option.
+
+## AI disclosure
+
+This project is developed with AI assistance. This section documents how, so users and downstream packagers can make informed decisions.
+
+- **Tools**: Claude Code (Anthropic), Opus 4.7, invoked locally with a persistent project-scoped memory and a small set of repo-specific rules.
+
+- **Used for**: Refactors, mechanical multi-file edits, boilerplate (feature gates, error enums, derive macros, trait impls), test scaffolding, doc polish, exploratory design conversations.
+
+- **Not used for**: Engineering, critical code, git manipulation (commit, merge, rebase…), real-world tests.
+
+- **Verification**: Every AI-assisted change is read, compiled, tested, and formatted before commit (`nix develop --command cargo check / cargo test / cargo fmt`). Behavioural correctness is verified against the relevant RFC or upstream spec, not assumed from the model output. Tests are never adjusted to fit AI-generated code; the code is adjusted to fit correct behaviour.
+
+- **Limitations**: AI models occasionally produce code that compiles and passes tests but is subtly wrong: off-by-one errors, missed edge cases, plausible but nonexistent APIs, stale RFC references. The verification workflow catches most of this; it does not catch all of it. Bug reports are welcome and taken seriously.
+
+- **Last reviewed**: 31/05/2026
 
 ## Social
 
@@ -700,9 +493,10 @@ These interfaces are built at the top of Himalaya CLI to improve the User Experi
 
 Special thanks to the [NLnet foundation](https://nlnet.nl/) and the [European Commission](https://www.ngi.eu/) that have been financially supporting the project for years:
 
-- 2022: [NGI Assure](https://nlnet.nl/project/Himalaya/)
-- 2023: [NGI Zero Entrust](https://nlnet.nl/project/Pimalaya/)
-- 2024: [NGI Zero Core](https://nlnet.nl/project/Pimalaya-PIM/) *(still ongoing in 2026)*
+- 2022 → 2023: [NGI Assure](https://nlnet.nl/project/Himalaya/)
+- 2023 → 2024: [NGI Zero Entrust](https://nlnet.nl/project/Pimalaya/)
+- 2024 → 2026: [NGI Zero Core](https://nlnet.nl/project/Pimalaya-PIM/)
+- *2027 in preparation…*
 
 If you appreciate the project, feel free to donate using one of the following providers:
 

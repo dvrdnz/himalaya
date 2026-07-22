@@ -1,47 +1,41 @@
+mod account;
+mod backend;
+mod cli;
+mod config;
+#[cfg(feature = "gmail")]
+mod gmail;
+#[cfg(feature = "imap")]
+mod imap;
+#[cfg(feature = "jmap")]
+mod jmap;
+#[cfg(feature = "m2dir")]
+mod m2dir;
+#[cfg(feature = "maildir")]
+mod maildir;
+#[cfg(feature = "msgraph")]
+mod msgraph;
+mod shared;
+#[cfg(feature = "smtp")]
+mod smtp;
+mod wizard;
+
+use anyhow::Result;
 use clap::Parser;
-use color_eyre::Result;
-use himalaya::{
-    cli::Cli, config::TomlConfig, envelope::command::list::EnvelopeListCommand,
-    message::command::mailto::MessageMailtoCommand,
-};
-use pimalaya_tui::terminal::{
-    cli::{printer::StdoutPrinter, tracing},
-    config::TomlConfig as _,
-};
+use pimalaya_cli::{error::ErrorReport, log::Logger, printer::StdoutPrinter};
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let tracing = tracing::install()?;
+use crate::cli::Cli;
 
-    #[cfg(feature = "keyring")]
-    secret::keyring::set_global_service_name("himalaya-cli");
-
-    // if the first argument starts by "mailto:", execute straight the
-    // mailto message command
-    let mailto = std::env::args()
-        .nth(1)
-        .filter(|arg| arg.starts_with("mailto:"));
-
-    if let Some(ref url) = mailto {
-        let mut printer = StdoutPrinter::default();
-        let config = TomlConfig::from_default_paths().await?;
-
-        return MessageMailtoCommand::new(url)?
-            .execute(&mut printer, &config)
-            .await;
-    }
-
+fn main() {
     let cli = Cli::parse();
-    let mut printer = StdoutPrinter::new(cli.output);
-    let res = match cli.command {
-        Some(cmd) => cmd.execute(&mut printer, cli.config_paths.as_ref()).await,
-        None => {
-            let config = TomlConfig::from_paths_or_default(cli.config_paths.as_ref()).await?;
-            EnvelopeListCommand::default()
-                .execute(&mut printer, &config)
-                .await
-        }
-    };
+    let mut printer = StdoutPrinter::new(&cli.json);
+    let result = execute(cli, &mut printer);
+    ErrorReport::eval(&mut printer, result);
+}
 
-    tracing.with_debug_and_trace_notes(res)
+fn execute(cli: Cli, printer: &mut StdoutPrinter) -> Result<()> {
+    Logger::try_init(&cli.log)?;
+    let config = cli.config.paths.as_ref();
+    let account = cli.account.name.as_deref();
+    let backend = cli.backend;
+    cli.cmd.execute(printer, config, account, backend)
 }
