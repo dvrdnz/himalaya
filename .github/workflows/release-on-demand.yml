@@ -7,7 +7,7 @@ on:
         description: Operating system
         type: choice
         required: true
-        default: ubuntu-latest
+        default: ubuntu-24.04
         options:
           - ubuntu-24.04
           - macos-13
@@ -32,7 +32,14 @@ on:
         required: true
 
 jobs:
+  fork-release-disabled:
+    if: github.repository != 'pimalaya/himalaya'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Release workflow is disabled for forks."
+
   release-on-demand:
+    if: github.repository == 'pimalaya/himalaya'
     uses: pimalaya/nix/.github/workflows/release-on-demand.yml@master
     secrets: inherit
     with:

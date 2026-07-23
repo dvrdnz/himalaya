@@ -5,5 +5,9 @@ on:
 
 jobs:
   audit:
-    uses: pimalaya/nix/.github/workflows/audit.yml@master
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.87.0
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check

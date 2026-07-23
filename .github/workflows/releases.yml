@@ -8,7 +8,14 @@ on:
       - master
 
 jobs:
+  fork-release-disabled:
+    if: github.repository != 'pimalaya/himalaya'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Release workflow is disabled for forks."
+
   release:
+    if: github.repository == 'pimalaya/himalaya'
     uses: pimalaya/nix/.github/workflows/releases.yml@master
     secrets: inherit
     with:
